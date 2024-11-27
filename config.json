@@ -1,0 +1,13 @@
+{
+    "vehicle_count": 20,
+    "road_length": 1000,
+    "lane_count": 4,
+    "speed_limit": 20,
+    "traffic_lights": [
+      {"position": 700, "red_duration": 30, "green_duration": 30}
+    ],
+    "reaction_time_range": [0.5, 1],
+    "lane_change_probability": 0.2,
+    "reaction_delay_probability": 0.1
+}
+  
