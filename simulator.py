@@ -66,18 +66,26 @@ class Road:
         self.traffic_lights = traffic_lights
 
     def draw(self, screen):
-        for lane in range(self.lanes):
+        pygame.draw.line(screen, BLACK, (0, 0), (self.length, 0), LANE_HEIGHT)
+        for lane in range(1, self.lanes+1):
             pygame.draw.line(screen, WHITE, (0, lane * LANE_HEIGHT), (self.length, lane * LANE_HEIGHT), 2)
 
         for light in self.traffic_lights:
             x = light["position"]
             color = RED if light["state"] == "red" else GREEN
             pygame.draw.circle(screen, color, (x, 10), 10)
+            # pygame.font.init()
+            font = pygame.font.SysFont(pygame.font.get_default_font(), 50)
+            countdown_text = font.render(str(light["time_remain"]), False, color)
+            screen.blit(countdown_text, (x + 15, 5))
 
     def update_traffic_lights(self, time):
         for light in self.traffic_lights:
-            cycle = light["red_duration"] + light["green_duration"]
-            light["state"] = "red" if time % cycle < light["red_duration"] else "green"
+            r_d = light["red_duration"]
+            g_d = light["green_duration"]
+            cycle = r_d + g_d
+            light["state"] = "red" if time % cycle < r_d else "green"
+            light["time_remain"] = int(r_d - time % cycle) if light["state"] == "red" else int(g_d - time % cycle % r_d)
 
 # Simulator class
 class Simulator:
@@ -175,7 +183,7 @@ def main():
     params = load_config("config.json")
 
     screen_width = params["road_length"]
-    screen_height = params["lane_count"] * LANE_HEIGHT
+    screen_height = (params["lane_count"] + 1) * LANE_HEIGHT
     screen = pygame.display.set_mode((screen_width, screen_height))
     pygame.display.set_caption("Traffic Flow Simulator")
 
