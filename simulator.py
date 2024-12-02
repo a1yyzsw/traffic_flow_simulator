@@ -27,7 +27,7 @@ class Vehicle:
         self.reaction_time = reaction_time
         self.length = length
         self.position = position  # Initial position
-        self.color = random.choice([BLUE, BLACK, WHITE])
+        self.color = WHITE
 
     def move(self, dt, speed_limit, road_length, vehicles_in_lane):
         self.speed = min(self.speed, speed_limit)  # Ensure speed does not exceed the speed limit
@@ -55,7 +55,7 @@ class Vehicle:
 
     def draw(self, screen):
         x = self.position
-        y = self.lane * LANE_HEIGHT + 10
+        y = (self.lane + 1) * LANE_HEIGHT + 10
         pygame.draw.rect(screen, self.color, (x, y, self.length, 20))  # Draw vehicle as a rectangle
 
 # Road class
@@ -66,14 +66,14 @@ class Road:
         self.traffic_lights = traffic_lights
 
     def draw(self, screen):
-        pygame.draw.line(screen, BLACK, (0, 0), (self.length, 0), LANE_HEIGHT)
+        pygame.draw.line(screen, BLACK, (0, LANE_HEIGHT//2), (self.length, LANE_HEIGHT//2), LANE_HEIGHT)
         for lane in range(1, self.lanes+1):
             pygame.draw.line(screen, WHITE, (0, lane * LANE_HEIGHT), (self.length, lane * LANE_HEIGHT), 2)
 
         for light in self.traffic_lights:
             x = light["position"]
             color = RED if light["state"] == "red" else GREEN
-            pygame.draw.circle(screen, color, (x, 10), 10)
+            pygame.draw.circle(screen, color, (x, LANE_HEIGHT//2), 10)
             # pygame.font.init()
             font = pygame.font.SysFont(pygame.font.get_default_font(), 50)
             countdown_text = font.render(str(light["time_remain"]), False, color)
@@ -81,11 +81,11 @@ class Road:
 
     def update_traffic_lights(self, time):
         for light in self.traffic_lights:
-            r_d = light["red_duration"]
-            g_d = light["green_duration"]
-            cycle = r_d + g_d
-            light["state"] = "red" if time % cycle < r_d else "green"
-            light["time_remain"] = int(r_d - time % cycle) if light["state"] == "red" else int(g_d - time % cycle % r_d)
+            red_duration = light["red_duration"]
+            green_duration = light["green_duration"]
+            cycle = red_duration + green_duration
+            light["state"] = "red" if time % cycle < red_duration else "green"
+            light["time_remain"] = int(red_duration - time % cycle) if light["state"] == "red" else int(green_duration - time % cycle % red_duration)
 
 # Simulator class
 class Simulator:
