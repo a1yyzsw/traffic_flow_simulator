@@ -22,17 +22,17 @@ class Vehicle:
     def __init__(self, id, lane, speed, max_acceleration, max_deceleration, reaction_time, length, position):
         self.id = id
         self.lane = lane
-        self.speed = speed
-        self.max_acceleration = max_acceleration
-        self.max_deceleration = max_deceleration
-        self.reaction_time = reaction_time
-        self.length = length
-        self.position = position  # Initial position, [x, y, rotation]
+        self.speed = speed                          # m/s
+        self.max_acceleration = max_acceleration    # m/s^2
+        self.max_deceleration = max_deceleration    # m/s^2
+        self.reaction_time = reaction_time          # s
+        self.length = length                        # m
+        self.position = position                    # [x, y, rotation], m m deg
         self.red_light_ahead = False
         self.color = WHITE
 
     def accelerate(self, value):
-        self.speed = min(self + min(value, self.max_acceleration), params["speed_limit"])
+        self.speed = min(self.speed + min(value, self.max_acceleration), params["speed_limit"])
 
     def brake(self, value):
         self.speed = max(self.speed - min(value, self.max_acceleration), 0)
@@ -42,8 +42,39 @@ class Vehicle:
             self.brake(value)
 
     def safe_distance(self):
-        return self.speed * (self.reaction_time + 2)
+        if self.speed > 10:
+            return self.speed * (self.reaction_time + 2)
+        else:
+            return self.speed * (self.reaction_time + 2)
     
+    def get_front_vehicle(self, vehicles_in_lane):
+        front_vehicles = [v for v in vehicles_in_lane if v.position > self.position]
+        if front_vehicles:
+            return min(front_vehicles, key=lambda v: v.position)
+        return None
+    
+    def front_distance(self, front_vehicle):
+        if front_vehicle:
+            return front_vehicle.position - self.position - front_vehicle.length/2 - self.length/2
+        else:
+            return float("inf")
+
+    def watch_traffic_light(self):
+        position_lights = [t["position"] for t in params["traffic_lights"]]
+        position_lights.sort()
+        for p_l in position_lights:
+            if p_l <= self.position:
+                continue
+            if p_l - self.position < 200:
+                self.red_light_ahead = True
+                break
+            else:
+                self.red_light_ahead = False
+                break
+    
+    def update_position(self, dt):
+        self.position += self.speed * dt
+
     def change_lane(self, direction):
         if direction == "L":
             self.lane = max(self.lane - 1, 0)
@@ -52,25 +83,18 @@ class Vehicle:
         else:
             print("invalid change lane input")
 
-    def get_front_vehicle(self, vehicles_in_lane):
-        front_vehicles = [v for v in vehicles_in_lane if v.position > self.position]
-        if front_vehicles:
-            return min(front_vehicles, key=lambda v: v.position)
-        return None
-    
-
     def move(self, dt, speed_limit, road_length, vehicles_in_lane):
-        self.speed = min(self.speed, speed_limit)  # Ensure speed does not exceed the speed limit
+        self.speed = min(self.speed, speed_limit * 1.2)  # Ensure speed does not exceed the speed limit
         front_vehicle = self.get_front_vehicle(vehicles_in_lane)
-        if front_vehicle:
-            safe_distance = self.speed * self.reaction_time + 2  # Calculate safe distance
-            if front_vehicle.position - front_vehicle.length/2 - self.position - self.length/2 < safe_distance:
-                self.speed = max(0, front_vehicle.speed - 1)  # Slow down to avoid collisions
-            else:
-                self.speed += self.max_acceleration
+        safe_distance = self.safe_distance()
+        front_distance = self.front_distance(front_vehicle)
+
+        if front_distance <= safe_distance:
+            self.brake(abs(front_vehicle.speed - self.speed))  # Slow down to avoid collisions
         else:
-            self.speed += self.max_acceleration
-        self.position += self.speed * dt
+            self.accelerate(5)
+
+        self.update_position(dt)
 
         # Check if the vehicle has exited the road
         if self.position > road_length:
@@ -116,7 +140,7 @@ class Road:
 # Simulator class
 class Simulator:
     def __init__(self, params):
-        self.road = Road(params["road_length"], params["lane_count"], params["traffic_lights"])
+        self.road = Road(params["road_length"] * 10, params["lane_count"], params["traffic_lights"])
         self.vehicles = self.initialize_vehicles(params)
         self.vehicle_count = params["vehicle_count"]
         self.time = 0
@@ -125,7 +149,7 @@ class Simulator:
         vehicles = []
         for lane in range(self.road.lanes):
             lane_positions = self.generate_lane_positions(
-                lane, params["road_length"], params["vehicle_count"] // self.road.lanes, params
+                lane, params["road_length"] * 10, params["vehicle_count"] // self.road.lanes, params
             )
             for pos in lane_positions:
                 vehicles.append(
@@ -211,7 +235,7 @@ def main():
     global params
     params = load_config("config.json")
 
-    screen_width = params["road_length"]
+    screen_width = params["road_length"] * 10
     screen_height = (params["lane_count"] + 1) * LANE_WIDTH
     screen = pygame.display.set_mode((screen_width, screen_height))
     pygame.display.set_caption("Traffic Flow Simulator")
