@@ -6,7 +6,7 @@ import json
 pygame.init()
 
 # Global constants
-LANE_HEIGHT = 40  # Height of each lane
+LANE_WIDTH = 40  # Height of each lane
 FPS = 30          # Frames per second
 
 # Color definitions
@@ -19,15 +19,45 @@ GREY = (200, 200, 200)
 
 # Vehicle class
 class Vehicle:
-    def __init__(self, id, lane, speed, acceleration, reaction_time, length, position):
+    def __init__(self, id, lane, speed, max_acceleration, max_deceleration, reaction_time, length, position):
         self.id = id
         self.lane = lane
         self.speed = speed
-        self.acceleration = acceleration
+        self.max_acceleration = max_acceleration
+        self.max_deceleration = max_deceleration
         self.reaction_time = reaction_time
         self.length = length
-        self.position = position  # Initial position
+        self.position = position  # Initial position, [x, y, rotation]
+        self.red_light_ahead = False
         self.color = WHITE
+
+    def accelerate(self, value):
+        self.speed = min(self + min(value, self.max_acceleration), params["speed_limit"])
+
+    def brake(self, value):
+        self.speed = max(self.speed - min(value, self.max_acceleration), 0)
+
+    def slow_to_stop(self, value):
+        while self.speed > 0:
+            self.brake(value)
+
+    def safe_distance(self):
+        return self.speed * (self.reaction_time + 2)
+    
+    def change_lane(self, direction):
+        if direction == "L":
+            self.lane = max(self.lane - 1, 0)
+        elif direction == "R":
+            self.lane = min(self.lane + 1, params["lane_count"] - 1)
+        else:
+            print("invalid change lane input")
+
+    def get_front_vehicle(self, vehicles_in_lane):
+        front_vehicles = [v for v in vehicles_in_lane if v.position > self.position]
+        if front_vehicles:
+            return min(front_vehicles, key=lambda v: v.position)
+        return None
+    
 
     def move(self, dt, speed_limit, road_length, vehicles_in_lane):
         self.speed = min(self.speed, speed_limit)  # Ensure speed does not exceed the speed limit
@@ -37,9 +67,9 @@ class Vehicle:
             if front_vehicle.position - front_vehicle.length/2 - self.position - self.length/2 < safe_distance:
                 self.speed = max(0, front_vehicle.speed - 1)  # Slow down to avoid collisions
             else:
-                self.speed += self.acceleration
+                self.speed += self.max_acceleration
         else:
-            self.speed += self.acceleration
+            self.speed += self.max_acceleration
         self.position += self.speed * dt
 
         # Check if the vehicle has exited the road
@@ -47,15 +77,11 @@ class Vehicle:
             return True  # Indicate that the vehicle should be removed
         return False
 
-    def get_front_vehicle(self, vehicles_in_lane):
-        front_vehicles = [v for v in vehicles_in_lane if v.position > self.position]
-        if front_vehicles:
-            return min(front_vehicles, key=lambda v: v.position)
-        return None
+
 
     def draw(self, screen):
         x = self.position
-        y = (self.lane + 1) * LANE_HEIGHT + 10
+        y = (self.lane + 1) * LANE_WIDTH + 10
         pygame.draw.rect(screen, self.color, (x, y, self.length, 20))  # Draw vehicle as a rectangle
 
 # Road class
@@ -66,14 +92,14 @@ class Road:
         self.traffic_lights = traffic_lights
 
     def draw(self, screen):
-        pygame.draw.line(screen, BLACK, (0, LANE_HEIGHT//2), (self.length, LANE_HEIGHT//2), LANE_HEIGHT)
+        pygame.draw.line(screen, BLACK, (0, LANE_WIDTH//2), (self.length, LANE_WIDTH//2), LANE_WIDTH)
         for lane in range(1, self.lanes+1):
-            pygame.draw.line(screen, WHITE, (0, lane * LANE_HEIGHT), (self.length, lane * LANE_HEIGHT), 2)
+            pygame.draw.line(screen, WHITE, (0, lane * LANE_WIDTH), (self.length, lane * LANE_WIDTH), 2)
 
         for light in self.traffic_lights:
             x = light["position"]
             color = RED if light["state"] == "red" else GREEN
-            pygame.draw.circle(screen, color, (x, LANE_HEIGHT//2), 10)
+            pygame.draw.circle(screen, color, (x, LANE_WIDTH//2), 10)
             # pygame.font.init()
             font = pygame.font.SysFont(pygame.font.get_default_font(), 50)
             countdown_text = font.render(str(light["time_remain"]), False, color)
@@ -107,7 +133,9 @@ class Simulator:
                         id=len(vehicles),
                         lane=lane,
                         speed=random.uniform(10, params["speed_limit"]),
-                        acceleration = random.uniform(1,10),
+                        max_acceleration = random.uniform(1,10),
+                        max_deceleration = random.uniform(1,10),
+
                         reaction_time=random.uniform(*params["reaction_time_range"]),
                         length=random.randint(30, 60),
                         position=pos
@@ -159,7 +187,8 @@ class Simulator:
             id=len(self.vehicles),
             lane=lane,
             speed=random.uniform(10, 40),
-            acceleration = random.uniform(1,10),
+            max_acceleration = random.uniform(1,10),
+            max_deceleration = random.uniform(1,10),
             reaction_time=random.uniform(1.0, 2.5),
             length=random.randint(30, 60),
             position=new_position
@@ -183,7 +212,7 @@ def main():
     params = load_config("config.json")
 
     screen_width = params["road_length"]
-    screen_height = (params["lane_count"] + 1) * LANE_HEIGHT
+    screen_height = (params["lane_count"] + 1) * LANE_WIDTH
     screen = pygame.display.set_mode((screen_width, screen_height))
     pygame.display.set_caption("Traffic Flow Simulator")
 

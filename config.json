@@ -1,8 +1,8 @@
 {
-    "vehicle_count": 20,
+    "vehicle_count": 1,
     "road_length": 1000,
     "lane_count": 4,
-    "speed_limit": 100,
+    "speed_limit": 30,
     "traffic_lights": [
       {"position": 700, "red_duration": 30, "green_duration": 30}
     ],
