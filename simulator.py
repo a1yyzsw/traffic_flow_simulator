@@ -5,9 +5,20 @@ import json
 # Initialize Pygame
 pygame.init()
 
+# Load parameters from a JSON file
+def load_config(file_path):
+    with open(file_path, 'r') as file:
+        return json.load(file)
+
 # Global constants
-LANE_WIDTH = 40  # Height of each lane
-FPS = 30          # Frames per second
+global params
+params = load_config("config.json")
+SPEED_LIMIT = params["speed_limit"]
+ROAD_LENGTH = params["road_length"]
+LANE_COUNT = params["lane_count"]
+LANE_WIDTH = params["lane_width"]
+TRAFFIC_LIGHTS = params["traffic_lights"]
+FPS = params["fps"]
 
 # Color definitions
 WHITE = (255, 255, 255)
@@ -19,20 +30,21 @@ GREY = (200, 200, 200)
 
 # Vehicle class
 class Vehicle:
-    def __init__(self, id, lane, speed, max_acceleration, max_deceleration, reaction_time, length, position):
+    def __init__(self, id, lane, speed, max_acceleration, max_deceleration, reaction_time, speed_scale_preference, length, position):
         self.id = id
         self.lane = lane
         self.speed = speed                          # m/s
         self.max_acceleration = max_acceleration    # m/s^2
         self.max_deceleration = max_deceleration    # m/s^2
         self.reaction_time = reaction_time          # s
+        self.speed_scale_preference = speed_scale_preference    # 0.5-1.5
         self.length = length                        # m
         self.position = position                    # [x, y, rotation], m m deg
         self.red_light_ahead = False
         self.color = WHITE
 
     def accelerate(self, value):
-        self.speed = min(self.speed + min(value, self.max_acceleration), params["speed_limit"])
+        self.speed = min(self.speed + min(value, self.max_acceleration), SPEED_LIMIT * self.speed_scale_preference)
 
     def brake(self, value):
         self.speed = max(self.speed - min(value, self.max_acceleration), 0)
@@ -42,10 +54,7 @@ class Vehicle:
             self.brake(value)
 
     def safe_distance(self):
-        if self.speed > 10:
-            return self.speed * (self.reaction_time + 2)
-        else:
-            return self.speed * (self.reaction_time + 2)
+        return self.speed * (self.reaction_time + self.speed / 10)
     
     def get_front_vehicle(self, vehicles_in_lane):
         front_vehicles = [v for v in vehicles_in_lane if v.position > self.position]
@@ -60,7 +69,7 @@ class Vehicle:
             return float("inf")
 
     def watch_traffic_light(self):
-        position_lights = [t["position"] for t in params["traffic_lights"]]
+        position_lights = [t["position"] for t in TRAFFIC_LIGHTS]
         position_lights.sort()
         for p_l in position_lights:
             if p_l <= self.position:
@@ -79,12 +88,12 @@ class Vehicle:
         if direction == "L":
             self.lane = max(self.lane - 1, 0)
         elif direction == "R":
-            self.lane = min(self.lane + 1, params["lane_count"] - 1)
+            self.lane = min(self.lane + 1, LANE_COUNT - 1)
         else:
             print("invalid change lane input")
 
     def move(self, dt, speed_limit, road_length, vehicles_in_lane):
-        self.speed = min(self.speed, speed_limit * 1.2)  # Ensure speed does not exceed the speed limit
+        self.speed = min(self.speed, speed_limit * self.speed_scale_preference)  # Ensure speed does not exceed the speed limit
         front_vehicle = self.get_front_vehicle(vehicles_in_lane)
         safe_distance = self.safe_distance()
         front_distance = self.front_distance(front_vehicle)
@@ -92,7 +101,7 @@ class Vehicle:
         if front_distance <= safe_distance:
             self.brake(abs(front_vehicle.speed - self.speed))  # Slow down to avoid collisions
         else:
-            self.accelerate(5)
+            self.accelerate(1)
 
         self.update_position(dt)
 
@@ -105,8 +114,11 @@ class Vehicle:
 
     def draw(self, screen):
         x = self.position
-        y = (self.lane + 1) * LANE_WIDTH + 10
-        pygame.draw.rect(screen, self.color, (x, y, self.length, 20))  # Draw vehicle as a rectangle
+        y = (self.lane + 1) * LANE_WIDTH * 10 + LANE_WIDTH * 5
+        pygame.draw.rect(screen, self.color, (x-self.length/2, y-10, self.length, 20), border_radius = 2)  # Draw vehicle as a rectangle
+        font = pygame.font.SysFont(pygame.font.get_default_font(), 20)
+        speed = font.render(str(int(self.speed * 3.6)), False, BLACK)
+        screen.blit(speed, (x, y - 5))
 
 # Road class
 class Road:
@@ -116,14 +128,14 @@ class Road:
         self.traffic_lights = traffic_lights
 
     def draw(self, screen):
-        pygame.draw.line(screen, BLACK, (0, LANE_WIDTH//2), (self.length, LANE_WIDTH//2), LANE_WIDTH)
+        pygame.draw.line(screen, BLACK, (0, LANE_WIDTH * 10//2), (self.length, LANE_WIDTH * 10//2), LANE_WIDTH * 10)
         for lane in range(1, self.lanes+1):
-            pygame.draw.line(screen, WHITE, (0, lane * LANE_WIDTH), (self.length, lane * LANE_WIDTH), 2)
+            pygame.draw.line(screen, WHITE, (0, lane * LANE_WIDTH * 10), (self.length, lane * LANE_WIDTH * 10), 2)
 
         for light in self.traffic_lights:
             x = light["position"]
             color = RED if light["state"] == "red" else GREEN
-            pygame.draw.circle(screen, color, (x, LANE_WIDTH//2), 10)
+            pygame.draw.circle(screen, color, (x, LANE_WIDTH * 10//2), 10)
             # pygame.font.init()
             font = pygame.font.SysFont(pygame.font.get_default_font(), 50)
             countdown_text = font.render(str(light["time_remain"]), False, color)
@@ -140,7 +152,7 @@ class Road:
 # Simulator class
 class Simulator:
     def __init__(self, params):
-        self.road = Road(params["road_length"] * 10, params["lane_count"], params["traffic_lights"])
+        self.road = Road(ROAD_LENGTH * 10, LANE_COUNT, TRAFFIC_LIGHTS)
         self.vehicles = self.initialize_vehicles(params)
         self.vehicle_count = params["vehicle_count"]
         self.time = 0
@@ -149,19 +161,19 @@ class Simulator:
         vehicles = []
         for lane in range(self.road.lanes):
             lane_positions = self.generate_lane_positions(
-                lane, params["road_length"] * 10, params["vehicle_count"] // self.road.lanes, params
+                lane, ROAD_LENGTH * 10, params["vehicle_count"] // self.road.lanes, params
             )
             for pos in lane_positions:
                 vehicles.append(
                     Vehicle(
                         id=len(vehicles),
                         lane=lane,
-                        speed=random.uniform(10, params["speed_limit"]),
+                        speed=random.uniform(10, SPEED_LIMIT),
                         max_acceleration = random.uniform(1,10),
                         max_deceleration = random.uniform(1,10),
-
                         reaction_time=random.uniform(*params["reaction_time_range"]),
-                        length=random.randint(30, 60),
+                        speed_scale_preference=random.normalvariate(1.1,0.2),
+                        length=random.randint(30,60),
                         position=pos
                     )
                 )
@@ -191,7 +203,7 @@ class Simulator:
             vehicles_in_lane = [v for v in self.vehicles if v.lane == lane]
 
             for vehicle in vehicles_in_lane:
-                if vehicle.move(1 / FPS, params["speed_limit"], self.road.length, vehicles_in_lane):
+                if vehicle.move(1 / FPS, SPEED_LIMIT, self.road.length, vehicles_in_lane):
                     self.vehicles.remove(vehicle)
 
         if len(self.vehicles) < self.vehicle_count:
@@ -213,7 +225,8 @@ class Simulator:
             speed=random.uniform(10, 40),
             max_acceleration = random.uniform(1,10),
             max_deceleration = random.uniform(1,10),
-            reaction_time=random.uniform(1.0, 2.5),
+            reaction_time=random.uniform(1.0,2.5),
+            speed_scale_preference=random.normalvariate(1.1,0.2),
             length=random.randint(30, 60),
             position=new_position
         )
@@ -225,18 +238,13 @@ class Simulator:
         for vehicle in self.vehicles:
             vehicle.draw(screen)
 
-# Load parameters from a JSON file
-def load_config(file_path):
-    with open(file_path, 'r') as file:
-        return json.load(file)
 
 # Main loop
 def main():
-    global params
-    params = load_config("config.json")
+    
 
-    screen_width = params["road_length"] * 10
-    screen_height = (params["lane_count"] + 1) * LANE_WIDTH
+    screen_width = ROAD_LENGTH * 10
+    screen_height = (LANE_COUNT + 1) * LANE_WIDTH * 10
     screen = pygame.display.set_mode((screen_width, screen_height))
     pygame.display.set_caption("Traffic Flow Simulator")
 
